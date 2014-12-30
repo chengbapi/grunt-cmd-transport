@@ -4,6 +4,8 @@ exports.init = function(grunt) {
   var iduri = require('cmd-util').iduri;
   var _ = grunt.util._;
 
+  PARSED_MODULES = {};
+
 
   var exports = {};
 
@@ -124,6 +126,10 @@ exports.init = function(grunt) {
       }
     });
 
+    if (PARSED_MODULES[fpath]) {
+      return PARSED_MODULES[fpath];
+    }
+
     if (!fpath) {
       grunt.fail.warn("can't find module " + alias);
       return [];
@@ -148,6 +154,10 @@ exports.init = function(grunt) {
         }
       });
     });
+
+    if (options.parseOnce) {
+        PARSED_MODULES[fpath] = deps;
+    }
     return deps;
   }
 
@@ -159,6 +169,10 @@ exports.init = function(grunt) {
         fpath = path.join(path.dirname(basefile), fpath);
       }
       fpath = iduri.appendext(fpath);
+
+      if (PARSED_MODULES[fpath]) {
+          return PARSED_MODULES[fpath];
+      }
 
       var deps = [];
       var moduleDeps = {};
@@ -183,8 +197,8 @@ exports.init = function(grunt) {
         if (id.charAt(0) === '.') {
           // fix nested relative dependencies
           if (basefile) {
-            var altId = path.join(path.dirname(fpath), id).replace(/\\/g, '/');
-            var dirname = path.dirname(rootpath).replace(/\\/g, '/');
+            var altId = path.join(path.dirname(fpath), id);
+            var dirname = path.dirname(rootpath);
             if ( dirname !== altId ) {
               altId = path.relative(dirname, altId);
             } else {
@@ -215,6 +229,11 @@ exports.init = function(grunt) {
           deps = grunt.util._.union(deps, mdeps);
         }
       });
+
+      if (options.parseOnce) {
+        PARSED_MODULES[fpath] = deps;
+      }
+
       return deps;
     }
 
