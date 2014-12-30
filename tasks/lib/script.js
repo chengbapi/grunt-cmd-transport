@@ -4,7 +4,7 @@ exports.init = function(grunt) {
   var iduri = require('cmd-util').iduri;
   var _ = grunt.util._;
 
-  PARSED_MODULES = {};
+  var PARSED_MODULES = {};
 
 
   var exports = {};
