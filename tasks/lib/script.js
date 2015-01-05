@@ -4,8 +4,7 @@ exports.init = function(grunt) {
   var iduri = require('cmd-util').iduri;
   var _ = grunt.util._;
 
-  PARSED_MODULES = {};
-
+  var GLOBAL_PARSED_FILE_LIST = {};
 
   var exports = {};
 
@@ -43,8 +42,17 @@ exports.init = function(grunt) {
     }
 
     // create .js file
+    var id;
+    if (!options.quickMode) {
+      id = meta.id ? meta.id : unixy(options.idleading + fileObj.name.replace(/\.js$/, ''));
+    } else {
+      // 快速模式 只储存绝对路径
+      id = unixy(options.idleading + fileObj.name.replace(/\.js$/, ''));
+      id = path.join(options.quickMode.baseUrl, id);
+    }
+
     astCache = ast.modify(astCache, {
-      id: meta.id ? meta.id : unixy(options.idleading + fileObj.name.replace(/\.js$/, '')),
+      id: id,
       dependencies: deps,
       require: function(v) {
         // ignore when deps is specified by developer
@@ -126,10 +134,6 @@ exports.init = function(grunt) {
       }
     });
 
-    if (PARSED_MODULES[fpath]) {
-      return PARSED_MODULES[fpath];
-    }
-
     if (!fpath) {
       grunt.fail.warn("can't find module " + alias);
       return [];
@@ -148,21 +152,41 @@ exports.init = function(grunt) {
 
     parsed.forEach(function(meta) {
       meta.dependencies.forEach(function(dep) {
-        dep = iduri.absolute(alias, dep);
-        if (!_.contains(deps, dep) && !_.contains(ids, dep) && !_.contains(ids, dep.replace(/\.js$/, ''))) {
-          deps.push(dep);
+        if (!options.quickMode) {
+          dep = iduri.absolute(alias, dep);
+          if (!_.contains(deps, dep) && !_.contains(ids, dep) && !_.contains(ids, dep.replace(/\.js$/, ''))) {
+            deps.push(dep);
+          }
+        } else {
+          if (dep.charAt(0) === '.') {
+            dep = path.join(fpath, dep);
+          } else {
+            var alias = iduri.parseAlias(options, dep);
+            var filename = iduri.appendext(alias);
+            var mpath;
+            options.paths.some(function(base) {
+              var filepath = path.join(base, filename);
+              if (grunt.file.exists(filepath)) {
+                grunt.log.verbose.writeln('find module "' + filepath + '"');
+                mpath = filepath;
+                return true;
+              }
+            });
+            dep = mpath;
+          }
+          if (dep && !_.contains(deps, dep) && !_.contains(ids, dep) && !_.contains(ids, dep.replace(/\.js$/, ''))) {
+            deps.push(dep);
+          }
         }
       });
     });
 
-    if (options.parseOnce) {
-        PARSED_MODULES[fpath] = deps;
-    }
     return deps;
   }
 
   function parseDependencies(fpath, options) {
     var rootpath = fpath;
+    var moduleDeps = {};
 
     function relativeDependencies(fpath, options, basefile) {
       if (basefile) {
@@ -170,12 +194,11 @@ exports.init = function(grunt) {
       }
       fpath = iduri.appendext(fpath);
 
-      if (PARSED_MODULES[fpath]) {
-          return PARSED_MODULES[fpath];
+      if (GLOBAL_PARSED_FILE_LIST[fpath]) {
+        return GLOBAL_PARSED_FILE_LIST[fpath];
       }
 
       var deps = [];
-      var moduleDeps = {};
 
       if (!grunt.file.exists(fpath)) {
         if (!/\{\w+\}/.test(fpath)) {
@@ -198,27 +221,52 @@ exports.init = function(grunt) {
           // fix nested relative dependencies
           if (basefile) {
             var altId = path.join(path.dirname(fpath), id);
-            var dirname = path.dirname(rootpath);
-            if ( dirname !== altId ) {
-              altId = path.relative(dirname, altId);
+            if (options.quickMode) {
+              deps.push(altId);
             } else {
-              // the same name between file and directory
-              altId = path.relative(dirname, altId + '.js').replace(/\.js$/, '');
+              var dirname = path.dirname(rootpath);
+              if ( dirname !== altId ) {
+                altId = path.relative(dirname, altId);
+              } else {
+                // the same name between file and directory
+                altId = path.relative(dirname, altId + '.js').replace(/\.js$/, '');
+              }
+              altId = altId.replace(/\\/g, '/');
+              if (altId.charAt(0) !== '.') {
+                altId = './' + altId;
+              }
+              deps.push(altId);
             }
-            altId = altId.replace(/\\/g, '/');
-            if (altId.charAt(0) !== '.') {
-              altId = './' + altId;
-            }
-            deps.push(altId);
           } else {
-            deps.push(id);
+            if (options.quickMode) {
+              deps.push(path.join(path.dirname(rootpath), id));
+            } else {
+              deps.push(id);
+            }
           }
           if (/\.js$/.test(iduri.appendext(id))) {
             deps = grunt.util._.union(deps, relativeDependencies(id, options, fpath));
           }
         } else if (!moduleDeps[id]) {
           var alias = iduri.parseAlias(options, id);
-          deps.push(alias);
+
+          if (options.quickMode) {
+            var filename = iduri.appendext(alias);
+            var mpath;
+            options.paths.some(function(base) {
+              var filepath = path.join(base, filename);
+              if (grunt.file.exists(filepath)) {
+                grunt.log.verbose.writeln('find module "' + filepath + '"');
+                mpath = path.join(base, alias);
+                return true;
+              }
+            });
+            if (mpath) {
+              deps.push(mpath);
+            }
+          } else {
+            deps.push(alias);
+          }
 
           // don't parse no javascript dependencies
           var ext = path.extname(alias);
@@ -227,11 +275,15 @@ exports.init = function(grunt) {
           var mdeps = moduleDependencies(id, options);
           moduleDeps[id] = mdeps;
           deps = grunt.util._.union(deps, mdeps);
+        } else {
+            if (moduleDeps[id]) {
+                console.log(moduleDeps[id])
+            }
         }
       });
 
-      if (options.parseOnce) {
-        PARSED_MODULES[fpath] = deps;
+      if (options.quickMode) {
+        GLOBAL_PARSED_FILE_LIST[fpath] = deps;
       }
 
       return deps;

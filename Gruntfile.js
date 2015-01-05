@@ -30,6 +30,14 @@ module.exports = function(grunt) {
     },
 
     transport: {
+      /*
+      options: {
+        quickMode: {
+            baseUrl: 'test/cases/assets'
+        }
+      },
+      */
+
       expand: {
         files: [{
           expand: true,
